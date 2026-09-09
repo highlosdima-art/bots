@@ -3,11 +3,13 @@ from telebot import types
 import json
 import os
 from datetime import datetime, date
-import threading
 import time
 
-# ТВІЙ ТОКЕН ВІД BOTFATHER
+# ТВІЙ ТОКЕН БЕРЕТЬСЯ З ЗМІННОЇ СЕРЕДОВИЩА
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
+
+if not TOKEN:
+    raise ValueError("TELEGRAM_TOKEN не задано! Додай змінну середовища на Railway.")
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -65,7 +67,6 @@ def update_user_data(user_id, updates):
             'total': {'count': 0, 'spent': 0.0}
         }
     
-    # Оновлюємо
     for key, value in updates.items():
         if isinstance(value, dict):
             if key in data[user_id]:
@@ -83,11 +84,9 @@ def check_reset(user_id):
     today = date.today().isoformat()
     
     if user_data['daily']['date'] != today:
-        # Зберігаємо денну статистику в загальну
         user_data['total']['count'] += user_data['daily']['count']
         user_data['total']['spent'] += user_data['daily']['spent']
         
-        # Скидаємо денну
         user_data['daily']['count'] = 0
         user_data['daily']['spent'] = 0.0
         user_data['daily']['date'] = today
@@ -115,7 +114,7 @@ def start(message):
 💵 Ціна за 1 шт: {settings['price_per_cigarette']:.2f} ₴
 
 📌 *Команди:*
-🚬 `/smoke` - викурити сигарету (списати гроші)
+🚬 `/smoke` - викурити сигарету
 📊 `/stats` - показати статистику
 ⚙️ `/settings` - налаштувати ціну та бренд
 🔄 `/reset` - скинути денну статистику
@@ -127,21 +126,17 @@ def start(message):
 @bot.message_handler(commands=['smoke'])
 def smoke(message):
     user_id = message.from_user.id
-    
-    # Перевіряємо скидання
     check_reset(user_id)
     
     user_data = get_user_data(user_id)
     price = user_data['settings']['price_per_cigarette']
     brand = user_data['settings']['brand']
     
-    # Додаємо сигарету
     user_data['daily']['count'] += 1
     user_data['daily']['spent'] += price
     
     update_user_data(user_id, user_data)
     
-    # Відповідь з анімацією
     response = f"""🚬 *Викурив сигарету!*
 
 💨 {brand}
@@ -150,8 +145,7 @@ def smoke(message):
 📊 *Сьогодні:*
 🚬 Викурено: *{user_data['daily']['count']}* шт
 💰 Витрачено: *{user_data['daily']['spent']:.2f}* ₴
-
-💪 Так тримати! (або не дуже 😅)"""
+"""
     
     bot.reply_to(message, response, parse_mode='Markdown')
 
@@ -175,10 +169,7 @@ def stats(message):
 📈 *За весь час:*
 🚬 Всього викурено: *{user_data['total']['count']}* шт
 💰 Всього витрачено: *{user_data['total']['spent']:.2f}* ₴
-
-💡 *Якщо не палити сьогодні:*
-💵 Економія: *{settings['price_per_cigarette'] * 10:.2f}* ₴ (за 10 сигарет)"""
-
+"""
     bot.reply_to(message, stats_text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['settings'])
@@ -187,7 +178,6 @@ def settings_menu(message):
     user_data = get_user_data(user_id)
     settings = user_data['settings']
     
-    # Створюємо клавіатуру
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     btn_brand = types.InlineKeyboardButton("🏷️ Бренд", callback_data="set_brand")
     btn_price = types.InlineKeyboardButton("💰 Ціна пачки", callback_data="set_pack_price")
@@ -207,12 +197,9 @@ def settings_menu(message):
 
     bot.reply_to(message, settings_text, parse_mode='Markdown', reply_markup=keyboard)
 
-# ---- ОБРОБКА КНОПОК (налаштування) ----
-
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     user_id = call.from_user.id
-    user_data = get_user_data(user_id)
     
     if call.data == "back_to_menu":
         bot.edit_message_text(
