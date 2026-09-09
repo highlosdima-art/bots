@@ -7,7 +7,7 @@ import threading
 import time
 
 # ТВІЙ ТОКЕН ВІД BOTFATHER
-TOKEN = '8852614151:AAEUIuVXhad6kpf4-meANBbS_n9D5cQFjk0'
+TOKEN = os.environ.get('TELEGRAM_TOKEN')
 
 bot = telebot.TeleBot(TOKEN)
 
