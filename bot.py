@@ -1,48 +1,62 @@
+import os
+import json
+from datetime import datetime, date
 import telebot
 from telebot import types
-import json
-import os
-from datetime import datetime, date
-import time
 
-# ТВІЙ ТОКЕН БЕРЕТЬСЯ З ЗМІННОЇ СЕРЕДОВИЩА
+# ====================================================
+# 1. ТВІЙ ТОКЕН (БЕРЕТЬСЯ ІЗ ЗМІННИХ СЕРЕДОВИЩА)
+# ====================================================
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
-
 if not TOKEN:
-    raise ValueError("TELEGRAM_TOKEN не задано! Додай змінну середовища на Railway.")
+    raise ValueError("❌ TELEGRAM_TOKEN не знайдено! Додай змінну в Railway.")
 
 bot = telebot.TeleBot(TOKEN)
 
-# Файл для збереження даних
+# ====================================================
+# 2. ТВІЙ TELEGRAM ID (АДМІН)
+#    Отримай через @userinfobot
+# ====================================================
+ADMIN_ID = 123456789  # 🔴 ЗАМІНИ НА СВІЙ ID
+
+# ====================================================
+# 3. ФАЙЛ ДЛЯ ЗБЕРЕЖЕННЯ ДАНИХ
+# ====================================================
 DATA_FILE = 'smoke_data.json'
 
-# Дефолтні налаштування
-DEFAULT_SETTINGS = {
-    'brand': 'Вінстон X Style 6',
-    'pack_price': 170,
-    'pack_count': 20,
-    'price_per_cigarette': 8.5
-}
+# ====================================================
+# 4. РОБОТА З БАЗОЮ ДАНИХ (JSON)
+# ====================================================
 
 def load_data():
-    """Завантажує дані з файлу"""
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {}
 
 def save_data(data):
-    """Зберігає дані у файл"""
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def get_user_data(user_id):
-    """Отримує дані користувача"""
     data = load_data()
     user_id = str(user_id)
+    
     if user_id not in data:
         data[user_id] = {
-            'settings': DEFAULT_SETTINGS.copy(),
+            'user_info': {
+                'id': user_id,
+                'username': '',
+                'first_name': '',
+                'last_name': '',
+                'registered_at': datetime.now().isoformat()
+            },
+            'settings': {
+                'brand': 'Вінстон X Style 6',
+                'pack_price': 170,
+                'pack_count': 20,
+                'price_per_cigarette': 8.5
+            },
             'daily': {
                 'count': 0,
                 'spent': 0.0,
@@ -51,278 +65,238 @@ def get_user_data(user_id):
             'total': {
                 'count': 0,
                 'spent': 0.0
-            }
+            },
+            'history': []
         }
         save_data(data)
+    
     return data[user_id]
 
-def update_user_data(user_id, updates):
-    """Оновлює дані користувача"""
+def check_reset(user_id):
     data = load_data()
     user_id = str(user_id)
-    if user_id not in data:
-        data[user_id] = {
-            'settings': DEFAULT_SETTINGS.copy(),
-            'daily': {'count': 0, 'spent': 0.0, 'date': date.today().isoformat()},
-            'total': {'count': 0, 'spent': 0.0}
-        }
-    
-    for key, value in updates.items():
-        if isinstance(value, dict):
-            if key in data[user_id]:
-                data[user_id][key].update(value)
-            else:
-                data[user_id][key] = value
-        else:
-            data[user_id][key] = value
-    
-    save_data(data)
-
-def check_reset(user_id):
-    """Перевіряє чи потрібно скинути денну статистику"""
-    user_data = get_user_data(user_id)
     today = date.today().isoformat()
     
-    if user_data['daily']['date'] != today:
-        user_data['total']['count'] += user_data['daily']['count']
-        user_data['total']['spent'] += user_data['daily']['spent']
-        
-        user_data['daily']['count'] = 0
-        user_data['daily']['spent'] = 0.0
-        user_data['daily']['date'] = today
-        
-        update_user_data(user_id, user_data)
-        return True
-    return False
+    if data[user_id]['daily']['date'] != today:
+        data[user_id]['total']['count'] += data[user_id]['daily']['count']
+        data[user_id]['total']['spent'] += data[user_id]['daily']['spent']
+        data[user_id]['daily']['count'] = 0
+        data[user_id]['daily']['spent'] = 0.0
+        data[user_id]['daily']['date'] = today
+        save_data(data)
 
-# ---- КОМАНДИ БОТА ----
+def is_admin(user_id):
+    return str(user_id) == str(ADMIN_ID)
+
+# ====================================================
+# 5. КОМАНДИ ДЛЯ ВСІХ КОРИСТУВАЧІВ
+# ====================================================
 
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
     user_data = get_user_data(user_id)
+    
+    data = load_data()
+    data[str(user_id)]['user_info']['username'] = message.from_user.username or ''
+    data[str(user_id)]['user_info']['first_name'] = message.from_user.first_name or ''
+    data[str(user_id)]['user_info']['last_name'] = message.from_user.last_name or ''
+    save_data(data)
+    
     settings = user_data['settings']
     
-    welcome_text = f"""🚬 *Вітаю в SmokeCounterBot!*
+    text = f"""🚬 *Вітаю! Лічильник сигарет*
 
-Я допоможу тобі рахувати витрати на сигарети.
-
-📊 *Поточні налаштування:*
+📊 *Твої налаштування:*
 🏷️ Бренд: {settings['brand']}
 💰 Ціна пачки: {settings['pack_price']} ₴
 📦 Сигарет у пачці: {settings['pack_count']} шт
 💵 Ціна за 1 шт: {settings['price_per_cigarette']:.2f} ₴
 
 📌 *Команди:*
-🚬 `/smoke` - викурити сигарету
-📊 `/stats` - показати статистику
-⚙️ `/settings` - налаштувати ціну та бренд
-🔄 `/reset` - скинути денну статистику
+/smoke - викурити сигарету
+/stats - моя статистика
+/settings - налаштування
 
-Спробуй натиснути /smoke прямо зараз!"""
-
-    bot.reply_to(message, welcome_text, parse_mode='Markdown')
+👤 Твій ID: `{user_id}`"""
+    
+    bot.reply_to(message, text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['smoke'])
 def smoke(message):
-    user_id = message.from_user.id
+    user_id = str(message.from_user.id)
     check_reset(user_id)
     
-    user_data = get_user_data(user_id)
-    price = user_data['settings']['price_per_cigarette']
-    brand = user_data['settings']['brand']
+    data = load_data()
+    price = data[user_id]['settings']['price_per_cigarette']
+    brand = data[user_id]['settings']['brand']
     
-    user_data['daily']['count'] += 1
-    user_data['daily']['spent'] += price
-    
-    update_user_data(user_id, user_data)
+    record = {
+        'date': date.today().isoformat(),
+        'time': datetime.now().strftime('%H:%M:%S'),
+        'price': price,
+        'brand': brand
+    }
+    data[user_id]['history'].append(record)
+    data[user_id]['daily']['count'] += 1
+    data[user_id]['daily']['spent'] += price
+    save_data(data)
     
     response = f"""🚬 *Викурив сигарету!*
 
 💨 {brand}
 💸 Списано: *{price:.2f} ₴*
+🕐 Час: {record['time']}
 
 📊 *Сьогодні:*
-🚬 Викурено: *{user_data['daily']['count']}* шт
-💰 Витрачено: *{user_data['daily']['spent']:.2f}* ₴
-"""
+🚬 Викурено: *{data[user_id]['daily']['count']}* шт
+💰 Витрачено: *{data[user_id]['daily']['spent']:.2f}* ₴"""
     
     bot.reply_to(message, response, parse_mode='Markdown')
 
 @bot.message_handler(commands=['stats'])
 def stats(message):
-    user_id = message.from_user.id
+    user_id = str(message.from_user.id)
     check_reset(user_id)
     
-    user_data = get_user_data(user_id)
-    settings = user_data['settings']
+    data = load_data()
+    user = data[user_id]
+    settings = user['settings']
     
-    stats_text = f"""📊 *Твоя статистика*
+    text = f"""📊 *Твоя статистика*
 
 🔹 *Бренд:* {settings['brand']}
 🔹 *Ціна за 1 шт:* {settings['price_per_cigarette']:.2f} ₴
 
 📆 *Сьогодні:*
-🚬 Викурено: *{user_data['daily']['count']}* шт
-💰 Витрачено: *{user_data['daily']['spent']:.2f}* ₴
+🚬 Викурено: *{user['daily']['count']}* шт
+💰 Витрачено: *{user['daily']['spent']:.2f}* ₴
 
 📈 *За весь час:*
-🚬 Всього викурено: *{user_data['total']['count']}* шт
-💰 Всього витрачено: *{user_data['total']['spent']:.2f}* ₴
-"""
-    bot.reply_to(message, stats_text, parse_mode='Markdown')
+🚬 Всього: *{user['total']['count'] + user['daily']['count']}* шт
+💰 Всього: *{user['total']['spent'] + user['daily']['spent']:.2f}* ₴
+
+📋 *Записів в історії:* {len(user['history'])} шт"""
+    
+    bot.reply_to(message, text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['settings'])
 def settings_menu(message):
-    user_id = message.from_user.id
-    user_data = get_user_data(user_id)
-    settings = user_data['settings']
+    user_id = str(message.from_user.id)
+    data = load_data()
+    settings = data[user_id]['settings']
     
     keyboard = types.InlineKeyboardMarkup(row_width=2)
-    btn_brand = types.InlineKeyboardButton("🏷️ Бренд", callback_data="set_brand")
-    btn_price = types.InlineKeyboardButton("💰 Ціна пачки", callback_data="set_pack_price")
-    btn_count = types.InlineKeyboardButton("📦 Кількість в пачці", callback_data="set_pack_count")
-    btn_back = types.InlineKeyboardButton("🔙 Назад", callback_data="back_to_menu")
+    keyboard.add(
+        types.InlineKeyboardButton("🏷️ Бренд", callback_data="set_brand"),
+        types.InlineKeyboardButton("💰 Ціна пачки", callback_data="set_price"),
+        types.InlineKeyboardButton("📦 Кількість", callback_data="set_count")
+    )
     
-    keyboard.add(btn_brand, btn_price, btn_count, btn_back)
-    
-    settings_text = f"""⚙️ *Поточні налаштування:*
+    text = f"""⚙️ *Твої налаштування*
 
 🏷️ Бренд: *{settings['brand']}*
 💰 Ціна пачки: *{settings['pack_price']}* ₴
 📦 Сигарет у пачці: *{settings['pack_count']}* шт
-💵 Ціна за 1 шт: *{settings['price_per_cigarette']:.2f}* ₴
+💵 Ціна за 1 шт: *{settings['price_per_cigarette']:.2f}* ₴"""
+    
+    bot.reply_to(message, text, parse_mode='Markdown', reply_markup=keyboard)
 
-*Вибери, що змінити:*"""
-
-    bot.reply_to(message, settings_text, parse_mode='Markdown', reply_markup=keyboard)
+# ====================================================
+# 6. ОБРОБКА КНОПОК НАЛАШТУВАНЬ
+# ====================================================
 
 @bot.callback_query_handler(func=lambda call: True)
-def handle_callback(call):
-    user_id = call.from_user.id
+def handle_settings(call):
+    user_id = str(call.from_user.id)
     
-    if call.data == "back_to_menu":
-        bot.edit_message_text(
-            "🔙 Повернувся в головне меню.\nВикористовуй команди: /smoke, /stats, /settings",
-            call.message.chat.id,
-            call.message.message_id
-        )
-        bot.answer_callback_query(call.id)
-        return
-    
-    elif call.data == "set_brand":
+    if call.data == "set_brand":
         msg = bot.send_message(call.message.chat.id, "✏️ Напиши нову назву бренду:")
-        bot.register_next_step_handler(msg, set_brand)
-        bot.answer_callback_query(call.id)
+        bot.register_next_step_handler(msg, set_brand, user_id)
     
-    elif call.data == "set_pack_price":
-        msg = bot.send_message(call.message.chat.id, "✏️ Введи нову ціну пачки (в грн):")
-        bot.register_next_step_handler(msg, set_pack_price)
-        bot.answer_callback_query(call.id)
+    elif call.data == "set_price":
+        msg = bot.send_message(call.message.chat.id, "✏️ Введи ціну пачки (грн):")
+        bot.register_next_step_handler(msg, set_pack_price, user_id)
     
-    elif call.data == "set_pack_count":
+    elif call.data == "set_count":
         msg = bot.send_message(call.message.chat.id, "✏️ Введи кількість сигарет у пачці:")
-        bot.register_next_step_handler(msg, set_pack_count)
-        bot.answer_callback_query(call.id)
-
-def set_brand(message):
-    user_id = message.from_user.id
-    brand = message.text.strip()
-    
-    user_data = get_user_data(user_id)
-    user_data['settings']['brand'] = brand
-    update_user_data(user_id, user_data)
-    
-    bot.reply_to(message, f"✅ Бренд змінено на *{brand}*!", parse_mode='Markdown')
-
-def set_pack_price(message):
-    user_id = message.from_user.id
-    try:
-        price = float(message.text.replace(',', '.'))
-        if price <= 0:
-            raise ValueError
-        
-        user_data = get_user_data(user_id)
-        user_data['settings']['pack_price'] = price
-        user_data['settings']['price_per_cigarette'] = price / user_data['settings']['pack_count']
-        update_user_data(user_id, user_data)
-        
-        bot.reply_to(
-            message,
-            f"✅ Ціну пачки змінено на *{price:.2f}* ₴\n"
-            f"💰 Ціна за 1 шт: *{user_data['settings']['price_per_cigarette']:.2f}* ₴",
-            parse_mode='Markdown'
-        )
-    except:
-        bot.reply_to(message, "❌ Введи коректне число (наприклад: 170)")
-
-def set_pack_count(message):
-    user_id = message.from_user.id
-    try:
-        count = int(message.text)
-        if count <= 0:
-            raise ValueError
-        
-        user_data = get_user_data(user_id)
-        user_data['settings']['pack_count'] = count
-        user_data['settings']['price_per_cigarette'] = user_data['settings']['pack_price'] / count
-        update_user_data(user_id, user_data)
-        
-        bot.reply_to(
-            message,
-            f"✅ Кількість змінено на *{count}* шт\n"
-            f"💰 Ціна за 1 шт: *{user_data['settings']['price_per_cigarette']:.2f}* ₴",
-            parse_mode='Markdown'
-        )
-    except:
-        bot.reply_to(message, "❌ Введи ціле число (наприклад: 20)")
-
-@bot.message_handler(commands=['reset'])
-def reset(message):
-    user_id = message.from_user.id
-    keyboard = types.InlineKeyboardMarkup()
-    btn_yes = types.InlineKeyboardButton("✅ Так, скинути", callback_data="confirm_reset")
-    btn_no = types.InlineKeyboardButton("❌ Ні", callback_data="cancel_reset")
-    keyboard.add(btn_yes, btn_no)
-    
-    bot.reply_to(
-        message,
-        "⚠️ *Точно скинути денну статистику?*\n"
-        "Денна статистика переміститься в загальну, а сьогоднішня обнулиться.",
-        parse_mode='Markdown',
-        reply_markup=keyboard
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data in ["confirm_reset", "cancel_reset"])
-def handle_reset(call):
-    user_id = call.from_user.id
-    
-    if call.data == "confirm_reset":
-        user_data = get_user_data(user_id)
-        user_data['total']['count'] += user_data['daily']['count']
-        user_data['total']['spent'] += user_data['daily']['spent']
-        user_data['daily']['count'] = 0
-        user_data['daily']['spent'] = 0.0
-        user_data['daily']['date'] = date.today().isoformat()
-        update_user_data(user_id, user_data)
-        
-        bot.edit_message_text(
-            "✅ Денну статистику скинуто!",
-            call.message.chat.id,
-            call.message.message_id
-        )
-    else:
-        bot.edit_message_text(
-            "❌ Скидання скасовано.",
-            call.message.chat.id,
-            call.message.message_id
-        )
+        bot.register_next_step_handler(msg, set_pack_count, user_id)
     
     bot.answer_callback_query(call.id)
 
-# ---- ЗАПУСК БОТА ----
+def set_brand(message, user_id):
+    data = load_data()
+    data[user_id]['settings']['brand'] = message.text.strip()
+    save_data(data)
+    bot.reply_to(message, f"✅ Бренд змінено на *{data[user_id]['settings']['brand']}*!", parse_mode='Markdown')
+
+def set_pack_price(message, user_id):
+    try:
+        price = float(message.text.replace(',', '.'))
+        data = load_data()
+        data[user_id]['settings']['pack_price'] = price
+        data[user_id]['settings']['price_per_cigarette'] = price / data[user_id]['settings']['pack_count']
+        save_data(data)
+        bot.reply_to(
+            message,
+            f"✅ Ціну пачки змінено на *{price:.2f}* ₴\n"
+            f"💰 Ціна за 1 шт: *{data[user_id]['settings']['price_per_cigarette']:.2f}* ₴",
+            parse_mode='Markdown'
+        )
+    except:
+        bot.reply_to(message, "❌ Введи коректне число")
+
+def set_pack_count(message, user_id):
+    try:
+        count = int(message.text)
+        data = load_data()
+        data[user_id]['settings']['pack_count'] = count
+        data[user_id]['settings']['price_per_cigarette'] = data[user_id]['settings']['pack_price'] / count
+        save_data(data)
+        bot.reply_to(
+            message,
+            f"✅ Кількість змінено на *{count}* шт\n"
+            f"💰 Ціна за 1 шт: *{data[user_id]['settings']['price_per_cigarette']:.2f}* ₴",
+            parse_mode='Markdown'
+        )
+    except:
+        bot.reply_to(message, "❌ Введи ціле число")
+
+# ====================================================
+# 7. КОМАНДА ТІЛЬКИ ДЛЯ ТЕБЕ (АДМІНА)
+# ====================================================
+
+@bot.message_handler(commands=['getdata'])
+def get_data_file(message):
+    """Надсилає файл smoke_data.json (тільки для адміна)"""
+    user_id = str(message.from_user.id)
+    
+    if not is_admin(user_id):
+        bot.reply_to(message, "⛔ Доступ заборонено. Ця команда тільки для адміністратора.")
+        return
+    
+    if not os.path.exists(DATA_FILE):
+        bot.reply_to(message, "❌ Файл з даними ще не створено.")
+        return
+    
+    try:
+        with open(DATA_FILE, 'rb') as f:
+            bot.send_document(
+                message.chat.id,
+                f,
+                caption=f"📊 База даних SmokeCounter\n"
+                        f"📅 Дата: {date.today().isoformat()}\n"
+                        f"📁 Розмір: {os.path.getsize(DATA_FILE)} байт"
+            )
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка: {e}")
+
+# ====================================================
+# 8. ЗАПУСК БОТА
+# ====================================================
 
 if __name__ == '__main__':
     print("🤖 Бот запущено!")
+    print(f"👑 Адмін ID: {ADMIN_ID}")
     print("📱 Знайди свого бота в Telegram і напиши /start")
     bot.polling(none_stop=True)
