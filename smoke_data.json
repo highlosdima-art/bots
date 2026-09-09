@@ -1,0 +1,70 @@
+{
+  "1081116211": {
+    "settings": {
+      "brand": "Вінстон X Style 6",
+      "pack_price": 170,
+      "pack_count": 20,
+      "price_per_cigarette": 8.5
+    },
+    "daily": {
+      "count": 5,
+      "spent": 42.5,
+      "date": "2026-09-09"
+    },
+    "total": {
+      "count": 0,
+      "spent": 0.0
+    }
+  },
+  "556250406": {
+    "settings": {
+      "brand": "Вінстон X Style 6",
+      "pack_price": 170,
+      "pack_count": 20,
+      "price_per_cigarette": 8.5
+    },
+    "daily": {
+      "count": 0,
+      "spent": 0.0,
+      "date": "2026-09-09"
+    },
+    "total": {
+      "count": 0,
+      "spent": 0.0
+    }
+  },
+  "241692743": {
+    "settings": {
+      "brand": "Вінстон X Style 6",
+      "pack_price": 170,
+      "pack_count": 20,
+      "price_per_cigarette": 8.5
+    },
+    "daily": {
+      "count": 0,
+      "spent": 0.0,
+      "date": "2026-09-09"
+    },
+    "total": {
+      "count": 0,
+      "spent": 0.0
+    }
+  },
+  "542916068": {
+    "settings": {
+      "brand": "Вінстон X Style 6",
+      "pack_price": 170,
+      "pack_count": 20,
+      "price_per_cigarette": 8.5
+    },
+    "daily": {
+      "count": 0,
+      "spent": 0.0,
+      "date": "2026-09-09"
+    },
+    "total": {
+      "count": 0,
+      "spent": 0.0
+    }
+  }
+}
