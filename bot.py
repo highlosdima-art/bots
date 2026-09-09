@@ -541,7 +541,237 @@ def start(message):
 # ====================================================
 # 9. ЗАПУСК
 # ====================================================
+# ====================================================
+# МЕНЮ АДМІНА
+# ====================================================
 
+@bot.message_handler(commands=['admin'])
+def admin_menu(message):
+    """Головне меню адміна"""
+    user_id = str(message.from_user.id)
+    
+    if not is_admin(user_id):
+        bot.reply_to(message, "⛔ Доступ заборонено.")
+        return
+    
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        types.InlineKeyboardButton("📊 Експорт Excel", callback_data="admin_export"),
+        types.InlineKeyboardButton("📋 Всі користувачі", callback_data="admin_users"),
+        types.InlineKeyboardButton("📈 Загальна статистика", callback_data="admin_stats"),
+        types.InlineKeyboardButton("🗑️ Очистити дані", callback_data="admin_clear"),
+        types.InlineKeyboardButton("📤 Отримати JSON", callback_data="admin_getdata"),
+        types.InlineKeyboardButton("❌ Закрити", callback_data="admin_close")
+    )
+    
+    bot.reply_to(
+        message,
+        "👑 *Меню адміністратора*\n\n"
+        "Оберіть дію:",
+        parse_mode='Markdown',
+        reply_markup=keyboard
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
+def handle_admin_actions(call):
+    user_id = str(call.from_user.id)
+    
+    if not is_admin(user_id):
+        bot.answer_callback_query(call.id, "⛔ Доступ заборонено!")
+        return
+    
+    data = load_data()
+    
+    if call.data == "admin_export":
+        # Експорт в Excel
+        if not data:
+            bot.edit_message_text(
+                "📭 Немає даних для експорту.",
+                call.message.chat.id,
+                call.message.message_id
+            )
+            bot.answer_callback_query(call.id)
+            return
+        
+        # Створюємо CSV
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=';')
+        writer.writerow(['User ID', "Ім'я", 'Продукт', 'Тип', 'Дата', 'Час', 'Ціна (грн)'])
+        
+        for uid, user_data in data.items():
+            for record in user_data.get('history', []):
+                writer.writerow([
+                    uid,
+                    user_data['user_info'].get('first_name', ''),
+                    record['product_name'],
+                    record['product_type'],
+                    record['date'],
+                    record['time'],
+                    f"{record['price']:.2f}"
+                ])
+        
+        csv_content = output.getvalue().encode('utf-8-sig')
+        filename = f"smoke_export_{date.today().isoformat()}.csv"
+        
+        bot.send_document(
+            call.message.chat.id,
+            ('csv', csv_content),
+            caption=f"📊 Експорт даних\n📅 {date.today().isoformat()}\n👥 Користувачів: {len(data)}"
+        )
+        bot.answer_callback_query(call.id)
+        bot.edit_message_text(
+            "✅ Експорт виконано! Файл надіслано.",
+            call.message.chat.id,
+            call.message.message_id
+        )
+    
+    elif call.data == "admin_users":
+        # Список всіх користувачів
+        text = "👥 *Всі користувачі:*\n\n"
+        for uid, user_data in data.items():
+            info = user_data['user_info']
+            history_count = len(user_data.get('history', []))
+            text += f"• {info.get('first_name', 'Без імені')} (@{info.get('username', '')})\n"
+            text += f"  ID: `{uid}` | Записів: {history_count}\n"
+        
+        if not data:
+            text = "📭 Немає користувачів."
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown'
+        )
+        bot.answer_callback_query(call.id)
+    
+    elif call.data == "admin_stats":
+        # Загальна статистика
+        total_users = len(data)
+        total_smokes = 0
+        total_spent = 0.0
+        product_stats = {}
+        
+        for uid, user_data in data.items():
+            for record in user_data.get('history', []):
+                total_smokes += 1
+                total_spent += record['price']
+                
+                prod_name = record['product_name']
+                if prod_name not in product_stats:
+                    product_stats[prod_name] = {'count': 0, 'spent': 0}
+                product_stats[prod_name]['count'] += 1
+                product_stats[prod_name]['spent'] += record['price']
+        
+        text = f"📈 *Загальна статистика*\n\n"
+        text += f"👥 Користувачів: *{total_users}*\n"
+        text += f"🚬 Всього сесій: *{total_smokes}*\n"
+        text += f"💰 Всього витрачено: *{total_spent:.2f}* ₴\n\n"
+        text += "*По продуктах:*\n"
+        for name, stats in product_stats.items():
+            text += f"   • {name}: {stats['count']} шт ({stats['spent']:.2f} ₴)\n"
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown'
+        )
+        bot.answer_callback_query(call.id)
+    
+    elif call.data == "admin_getdata":
+        # Отримати JSON файл
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'rb') as f:
+                bot.send_document(
+                    call.message.chat.id,
+                    f,
+                    caption=f"📁 База даних JSON\n📅 {date.today().isoformat()}"
+                )
+            bot.edit_message_text(
+                "✅ Файл надіслано.",
+                call.message.chat.id,
+                call.message.message_id
+            )
+        else:
+            bot.edit_message_text(
+                "❌ Файл з даними не знайдено.",
+                call.message.chat.id,
+                call.message.message_id
+            )
+        bot.answer_callback_query(call.id)
+    
+    elif call.data == "admin_clear":
+        # Підтвердження очищення
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            types.InlineKeyboardButton("✅ Так, очистити ВСЕ", callback_data="admin_clear_confirm"),
+            types.InlineKeyboardButton("❌ Ні, скасувати", callback_data="admin_clear_cancel")
+        )
+        bot.edit_message_text(
+            "⚠️ *УВАГА!* Ти впевнений, що хочеш ОЧИСТИТИ ВСІ ДАНІ?\n\n"
+            "Цю дію НЕ МОЖНА скасувати!",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+        bot.answer_callback_query(call.id)
+    
+    elif call.data == "admin_clear_confirm":
+        # Очищення даних
+        save_data({})
+        bot.edit_message_text(
+            "🗑️ *ВСІ ДАНІ ОЧИЩЕНО!*\n\n"
+            "База даних порожня.",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown'
+        )
+        bot.answer_callback_query(call.id)
+    
+    elif call.data == "admin_clear_cancel":
+        # Скасування
+        bot.edit_message_text(
+            "❌ Очищення скасовано.",
+            call.message.chat.id,
+            call.message.message_id
+        )
+        bot.answer_callback_query(call.id)
+    
+    elif call.data == "admin_close":
+        # Закрити меню
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.answer_callback_query(call.id)
+
+# ====================================================
+# КОМАНДА /GETDATA (залишаємо для зручності)
+# ====================================================
+
+@bot.message_handler(commands=['getdata'])
+def get_data_file(message):
+    """Надсилає файл smoke_data.json (тільки для адміна)"""
+    user_id = str(message.from_user.id)
+    
+    if not is_admin(user_id):
+        bot.reply_to(message, "⛔ Доступ заборонено. Ця команда тільки для адміністратора.")
+        return
+    
+    if not os.path.exists(DATA_FILE):
+        bot.reply_to(message, "❌ Файл з даними ще не створено.")
+        return
+    
+    try:
+        with open(DATA_FILE, 'rb') as f:
+            bot.send_document(
+                message.chat.id,
+                f,
+                caption=f"📊 База даних SmokeCounter\n"
+                        f"📅 Дата: {date.today().isoformat()}\n"
+                        f"📁 Розмір: {os.path.getsize(DATA_FILE)} байт"
+            )
+    except Exception as e:
+        bot.reply_to(message, f"❌ Помилка: {e}")
 if __name__ == '__main__':
     print("🤖 Бот запущено!")
     print(f"👑 Адмін ID: {ADMIN_ID}")
